@@ -1,0 +1,932 @@
+{
+  "info": {
+    "name": "Blogging Platform API",
+    "description": "Every REST and GraphQL endpoint of the Blogging Platform, with ready-to-send payloads and status-code tests.\n\nHOW TO USE\n1. Start the app (http://localhost:8080).\n2. Run the whole collection with the Collection Runner, in order. 'Create user' makes a unique run number ({{run}}) so the collection can run many times without duplicate errors.\n3. Every 'Create' request saves the new id in a collection variable (userId, tagId, postId, commentId, reviewId, gqlPostId) that later requests use.\n4. The last folder deletes everything that was created, so the database ends as it started.\n\nRequests named '(400)', '(401)', '(404)' or '(409)' are negative tests: they SHOULD fail with that status.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "run", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "tagId", "value": "" },
+    { "key": "postId", "value": "" },
+    { "key": "commentId", "value": "" },
+    { "key": "reviewId", "value": "" },
+    { "key": "gqlPostId", "value": "" }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": { "exec": [
+        "pm.test('response time under 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+      ] }
+    }
+  ],
+  "item": [
+    {
+      "name": "00. System & Docs",
+      "item": [
+        {
+          "name": "System info",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('has status, message, data', () => pm.expect(pm.response.json()).to.have.keys('status', 'message', 'data'));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/system/info" }
+        },
+        {
+          "name": "OpenAPI JSON (Swagger)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('is OpenAPI 3', () => pm.expect(pm.response.json().openapi).to.match(/^3/));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/v3/api-docs" }
+        }
+      ]
+    },
+    {
+      "name": "01. Users",
+      "item": [
+        {
+          "name": "Create user",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": [
+              "// unique number for this run, so usernames, emails and tag names never clash",
+              "pm.collectionVariables.set('run', Date.now().toString().slice(-7));"
+            ] } },
+            { "listen": "test", "script": { "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "pm.test('Location header', () => pm.response.to.have.header('Location'));",
+              "const body = pm.response.json();",
+              "pm.test('no password in response', () => { pm.expect(body.data).to.not.have.property('password'); pm.expect(body.data).to.not.have.property('passwordHash'); });",
+              "pm.collectionVariables.set('userId', body.data.id);"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"pm_{{run}}\",\n  \"email\": \"pm_{{run}}@test.local\",\n  \"password\": \"secret123\",\n  \"role\": \"AUTHOR\"\n}" },
+            "url": "{{baseUrl}}/api/users"
+          }
+        },
+        {
+          "name": "Get all users",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('data is a list', () => pm.expect(pm.response.json().data).to.be.an('array'));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/users" }
+        },
+        {
+          "name": "Get user by id",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('right user', () => pm.expect(pm.response.json().data.username).to.eql('pm_' + pm.collectionVariables.get('run')));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/users/{{userId}}" }
+        },
+        {
+          "name": "Update user",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('email changed', () => pm.expect(pm.response.json().data.email).to.eql('pm_' + pm.collectionVariables.get('run') + '.new@test.local'));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"pm_{{run}}\",\n  \"email\": \"pm_{{run}}.new@test.local\",\n  \"role\": \"AUTHOR\"\n}" },
+            "url": "{{baseUrl}}/api/users/{{userId}}"
+          }
+        },
+        {
+          "name": "Create user - invalid email (400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+            "pm.test('error for email field', () => pm.expect(pm.response.json().data).to.have.property('email'));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"bad_mail_user\",\n  \"email\": \"not-an-email\",\n  \"password\": \"secret123\"\n}" },
+            "url": "{{baseUrl}}/api/users"
+          }
+        },
+        {
+          "name": "Create user - short password and blank username (400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+            "pm.test('errors for both fields', () => pm.expect(pm.response.json().data).to.include.keys('username', 'password'));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"\",\n  \"email\": \"someone@test.local\",\n  \"password\": \"123\"\n}" },
+            "url": "{{baseUrl}}/api/users"
+          }
+        },
+        {
+          "name": "Create user - duplicate username (409)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('409 Conflict', () => pm.response.to.have.status(409));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"pm_{{run}}\",\n  \"email\": \"other_{{run}}@test.local\",\n  \"password\": \"secret123\"\n}" },
+            "url": "{{baseUrl}}/api/users"
+          }
+        },
+        {
+          "name": "Create user - duplicate email (409)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('409 Conflict', () => pm.response.to.have.status(409));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"other_{{run}}\",\n  \"email\": \"pm_{{run}}.new@test.local\",\n  \"password\": \"secret123\"\n}" },
+            "url": "{{baseUrl}}/api/users"
+          }
+        },
+        {
+          "name": "Get missing user (404)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/users/999999" }
+        }
+      ]
+    },
+    {
+      "name": "02. Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('returns the user', () => pm.expect(pm.response.json().data.id).to.eql(Number(pm.collectionVariables.get('userId'))));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"pm_{{run}}\",\n  \"password\": \"secret123\"\n}" },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Login - wrong password (401)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"pm_{{run}}\",\n  \"password\": \"wrong-password\"\n}" },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Login - empty fields (400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"\",\n  \"password\": \"\"\n}" },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03. Tags",
+      "item": [
+        {
+          "name": "Create tag",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('tagId', pm.response.json().data.id);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman{{run}}\"\n}" },
+            "url": "{{baseUrl}}/api/tags"
+          }
+        },
+        {
+          "name": "Get all tags",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/tags" }
+        },
+        {
+          "name": "Get tag by id",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/tags/{{tagId}}" }
+        },
+        {
+          "name": "Update tag",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('renamed', () => pm.expect(pm.response.json().data.name).to.eql('Postman' + pm.collectionVariables.get('run') + 'Updated'));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman{{run}}Updated\"\n}" },
+            "url": "{{baseUrl}}/api/tags/{{tagId}}"
+          }
+        },
+        {
+          "name": "Create tag - duplicate name (409)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('409 Conflict', () => pm.response.to.have.status(409));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman{{run}}Updated\"\n}" },
+            "url": "{{baseUrl}}/api/tags"
+          }
+        },
+        {
+          "name": "Create tag - empty name (400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"\"\n}" },
+            "url": "{{baseUrl}}/api/tags"
+          }
+        }
+      ]
+    },
+    {
+      "name": "04. Posts - CRUD",
+      "item": [
+        {
+          "name": "Create post",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.test('Location header', () => pm.response.to.have.header('Location'));",
+            "const post = pm.response.json().data;",
+            "pm.test('has the tag', () => pm.expect(post.tags.map(t => t.id)).to.include(Number(pm.collectionVariables.get('tagId'))));",
+            "pm.collectionVariables.set('postId', post.id);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Postman test post {{run}}\",\n  \"content\": \"This post was created from the Postman collection to test the API.\",\n  \"authorId\": {{userId}},\n  \"status\": \"PUBLISHED\",\n  \"tagIds\": [{{tagId}}]\n}" },
+            "url": "{{baseUrl}}/api/posts"
+          }
+        },
+        {
+          "name": "Get post by id",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts/{{postId}}" }
+        },
+        {
+          "name": "Update post",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('title changed', () => pm.expect(pm.response.json().data.title).to.include('updated'));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Postman test post {{run}} updated\",\n  \"content\": \"The content was changed by the Update post request.\",\n  \"status\": \"PUBLISHED\",\n  \"tagIds\": [{{tagId}}]\n}" },
+            "url": "{{baseUrl}}/api/posts/{{postId}}"
+          }
+        },
+        {
+          "name": "Create post - empty title (400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+            "pm.test('title error', () => pm.expect(pm.response.json().data).to.have.property('title'));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"\",\n  \"content\": \"Content that is long enough for validation.\",\n  \"authorId\": {{userId}}\n}" },
+            "url": "{{baseUrl}}/api/posts"
+          }
+        },
+        {
+          "name": "Create post - content too short (400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+            "pm.test('content error', () => pm.expect(pm.response.json().data).to.have.property('content'));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Too short\",\n  \"content\": \"short\",\n  \"authorId\": {{userId}}\n}" },
+            "url": "{{baseUrl}}/api/posts"
+          }
+        },
+        {
+          "name": "Create post - unknown author (404)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Ghost author\",\n  \"content\": \"Content that is long enough for validation.\",\n  \"authorId\": 999999\n}" },
+            "url": "{{baseUrl}}/api/posts"
+          }
+        },
+        {
+          "name": "Get missing post (404)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts/999999" }
+        },
+        {
+          "name": "Create post - title already used (409)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+            "pm.test('title error', () => pm.expect(pm.response.json().data).to.have.property('title'));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"POSTMAN TEST POST {{run}} UPDATED\",\n  \"content\": \"Same title as the post above (upper/lower case does not matter).\",\n  \"authorId\": {{userId}}\n}" },
+            "url": "{{baseUrl}}/api/posts"
+          }
+        }
+      ]
+    },
+    {
+      "name": "05. Posts - Paging, Sorting, Filtering, Search",
+      "item": [
+        {
+          "name": "Page 0, size 5",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const page = pm.response.json().data;",
+            "pm.test('at most 5 posts', () => pm.expect(page.content.length).to.be.at.most(5));",
+            "pm.test('has paging info', () => pm.expect(page).to.include.keys('page', 'size', 'totalElements', 'totalPages'));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts?page=0&size=5" }
+        },
+        {
+          "name": "Sort newest first (created_at DESC)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const dates = pm.response.json().data.content.map(p => p.createdAt);",
+            "pm.test('newest first', () => pm.expect(dates).to.eql([...dates].sort().reverse()));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts?sortBy=created_at&direction=DESC" }
+        },
+        {
+          "name": "Sort by title A-Z",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts?sortBy=title&direction=ASC" }
+        },
+        {
+          "name": "Sort by rating (best first)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts?sortBy=rating&direction=DESC" }
+        },
+        {
+          "name": "Filter by author",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const id = Number(pm.collectionVariables.get('userId'));",
+            "pm.test('only this author', () => pm.response.json().data.content.forEach(p => pm.expect(p.authorId).to.eql(id)));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts?authorId={{userId}}" }
+        },
+        {
+          "name": "Filter by tag name",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('finds the new post', () => pm.expect(pm.response.json().data.content.map(p => p.id)).to.include(Number(pm.collectionVariables.get('postId'))));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts?tag=Postman{{run}}Updated" }
+        },
+        {
+          "name": "Filter by status (DRAFT)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('only drafts', () => pm.response.json().data.content.forEach(p => pm.expect(p.status).to.eql('DRAFT')));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts?status=DRAFT" }
+        },
+        {
+          "name": "Combined: author + status + sort + page",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts?authorId={{userId}}&status=PUBLISHED&sortBy=title&direction=ASC&page=0&size=10" }
+        },
+        {
+          "name": "Keyword search",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('finds the new post', () => pm.expect(pm.response.json().data.content.map(p => p.id)).to.include(Number(pm.collectionVariables.get('postId'))));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts/search?keyword=Postman test post {{run}}" }
+        },
+        {
+          "name": "Search - empty keyword (400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts/search?keyword=" }
+        },
+        {
+          "name": "Bad sortBy column (400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts?sortBy=password_hash" }
+        },
+        {
+          "name": "Bad direction (400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts?direction=SIDEWAYS" }
+        },
+        {
+          "name": "Page size 0 (400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts?size=0" }
+        }
+      ]
+    },
+    {
+      "name": "06. Comments",
+      "item": [
+        {
+          "name": "Add comment to post",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('commentId', pm.response.json().data.id);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": {{userId}},\n  \"content\": \"Great post, written from Postman!\"\n}" },
+            "url": "{{baseUrl}}/api/posts/{{postId}}/comments"
+          }
+        },
+        {
+          "name": "Get comments of post",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('one comment', () => pm.expect(pm.response.json().data.length).to.eql(1));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts/{{postId}}/comments" }
+        },
+        {
+          "name": "Get all comments",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/comments" }
+        },
+        {
+          "name": "Get comments written by user",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/comments?userId={{userId}}" }
+        },
+        {
+          "name": "Get comments on posts of author",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/comments?postAuthorId={{userId}}" }
+        },
+        {
+          "name": "Get comment by id",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/comments/{{commentId}}" }
+        },
+        {
+          "name": "Update comment",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('text changed', () => pm.expect(pm.response.json().data.content).to.eql('Edited from Postman'));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"content\": \"Edited from Postman\"\n}" },
+            "url": "{{baseUrl}}/api/comments/{{commentId}}"
+          }
+        },
+        {
+          "name": "Add comment - empty content (400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": {{userId}},\n  \"content\": \"\"\n}" },
+            "url": "{{baseUrl}}/api/posts/{{postId}}/comments"
+          }
+        },
+        {
+          "name": "Add comment - missing post (404)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": {{userId}},\n  \"content\": \"Comment on a post that does not exist\"\n}" },
+            "url": "{{baseUrl}}/api/posts/999999/comments"
+          }
+        }
+      ]
+    },
+    {
+      "name": "07. Reviews",
+      "item": [
+        {
+          "name": "Create review",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('reviewId', pm.response.json().data.id);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": {{userId}},\n  \"rating\": 5,\n  \"reviewText\": \"Very useful article\"\n}" },
+            "url": "{{baseUrl}}/api/posts/{{postId}}/reviews"
+          }
+        },
+        {
+          "name": "Get reviews of post",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts/{{postId}}/reviews" }
+        },
+        {
+          "name": "Get all reviews",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/reviews" }
+        },
+        {
+          "name": "Get reviews written by user",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/reviews?userId={{userId}}" }
+        },
+        {
+          "name": "Get review by id",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/reviews/{{reviewId}}" }
+        },
+        {
+          "name": "Update review",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('rating changed', () => pm.expect(pm.response.json().data.rating).to.eql(4));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"rating\": 4,\n  \"reviewText\": \"Still useful after a second read\"\n}" },
+            "url": "{{baseUrl}}/api/reviews/{{reviewId}}"
+          }
+        },
+        {
+          "name": "Create review - rating 6 (400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+            "pm.test('rating error', () => pm.expect(pm.response.json().data).to.have.property('rating'));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": {{userId}},\n  \"rating\": 6\n}" },
+            "url": "{{baseUrl}}/api/posts/{{postId}}/reviews"
+          }
+        },
+        {
+          "name": "Create review - same user twice (409)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('409 Conflict', () => pm.response.to.have.status(409));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": {{userId}},\n  \"rating\": 3\n}" },
+            "url": "{{baseUrl}}/api/posts/{{postId}}/reviews"
+          }
+        }
+      ]
+    },
+    {
+      "name": "08. Reports (analytics)",
+      "item": [
+        {
+          "name": "Site summary",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/reports/summary" }
+        },
+        {
+          "name": "Posts per tag",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/reports/posts-per-tag" }
+        },
+        {
+          "name": "Top rated posts",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('at most 3', () => pm.expect(pm.response.json().data.length).to.be.at.most(3));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/reports/top-rated?limit=3" }
+        },
+        {
+          "name": "Most commented posts",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/reports/most-commented?limit=3" }
+        }
+      ]
+    },
+    {
+      "name": "09. Algorithms (demo)",
+      "item": [
+        {
+          "name": "Merge sort posts by title",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('merge sort used', () => pm.expect(pm.response.json().data.algorithm).to.eql('merge'));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/algorithms/sort?sortBy=title" }
+        },
+        {
+          "name": "Merge sort posts by date",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/algorithms/sort?sortBy=created_at" }
+        },
+        {
+          "name": "Merge sort posts by rating",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/algorithms/sort?sortBy=rating" }
+        },
+        {
+          "name": "Binary search by title",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('found', () => pm.expect(pm.response.json().data.found).to.be.true);"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/algorithms/search?algorithm=binary&title=Postman test post {{run}} updated" }
+        },
+        {
+          "name": "Linear search by title",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('found', () => pm.expect(pm.response.json().data.found).to.be.true);"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/algorithms/search?algorithm=linear&title=Postman test post {{run}} updated" }
+        },
+        {
+          "name": "Search - unknown algorithm (400)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/algorithms/search?algorithm=magic&title=anything" }
+        }
+      ]
+    },
+    {
+      "name": "10. GraphQL",
+      "item": [
+        {
+          "name": "Query - all posts (only id, title, author)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('no GraphQL errors', () => pm.expect(pm.response.json().errors).to.be.undefined);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "graphql", "graphql": { "query": "query {\n  posts(page: 0, size: 5, sortBy: \"created_at\", direction: \"DESC\") {\n    id\n    title\n    author { username }\n  }\n}", "variables": "" } },
+            "url": "{{baseUrl}}/graphql"
+          }
+        },
+        {
+          "name": "Query - post page with totals",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('no GraphQL errors', () => pm.expect(pm.response.json().errors).to.be.undefined);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "graphql", "graphql": { "query": "query {\n  postPage(page: 0, size: 3, sortBy: \"title\", direction: \"ASC\") {\n    content { id title averageRating commentCount }\n    totalElements\n    totalPages\n  }\n}", "variables": "" } },
+            "url": "{{baseUrl}}/graphql"
+          }
+        },
+        {
+          "name": "Query - one post with author, comments, tags, reviews",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('no GraphQL errors', () => pm.expect(pm.response.json().errors).to.be.undefined);",
+            "pm.test('post returned', () => pm.expect(pm.response.json().data.post.id).to.eql(String(pm.collectionVariables.get('postId'))));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "graphql", "graphql": { "query": "query ($id: ID!) {\n  post(id: $id) {\n    id\n    title\n    author { id username }\n    comments { content username }\n    tags { name }\n    reviews { rating reviewText }\n    averageRating\n  }\n}", "variables": "{\n  \"id\": \"{{postId}}\"\n}" } },
+            "url": "{{baseUrl}}/graphql"
+          }
+        },
+        {
+          "name": "Query - search posts",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('no GraphQL errors', () => pm.expect(pm.response.json().errors).to.be.undefined);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "graphql", "graphql": { "query": "query {\n  searchPosts(keyword: \"Postman\", page: 0, size: 5) {\n    content { id title }\n    totalElements\n  }\n}", "variables": "" } },
+            "url": "{{baseUrl}}/graphql"
+          }
+        },
+        {
+          "name": "Query - users and tags",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('no GraphQL errors', () => pm.expect(pm.response.json().errors).to.be.undefined);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "graphql", "graphql": { "query": "query {\n  users { id username role }\n  tags { id name }\n}", "variables": "" } },
+            "url": "{{baseUrl}}/graphql"
+          }
+        },
+        {
+          "name": "Query - comments and reviews of post",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('no GraphQL errors', () => pm.expect(pm.response.json().errors).to.be.undefined);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "graphql", "graphql": { "query": "query ($postId: ID!) {\n  comments(postId: $postId) { id content username }\n  reviews(postId: $postId) { id rating username }\n}", "variables": "{\n  \"postId\": \"{{postId}}\"\n}" } },
+            "url": "{{baseUrl}}/graphql"
+          }
+        },
+        {
+          "name": "Mutation - create post",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('no GraphQL errors', () => pm.expect(body.errors).to.be.undefined);",
+            "pm.collectionVariables.set('gqlPostId', body.data.createPost.id);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "graphql", "graphql": { "query": "mutation ($authorId: ID!, $title: String!) {\n  createPost(title: $title, content: \"Created with a GraphQL mutation from Postman.\", authorId: $authorId, status: PUBLISHED) {\n    id\n    title\n    status\n  }\n}", "variables": "{\n  \"authorId\": \"{{userId}}\",\n  \"title\": \"GraphQL post {{run}}\"\n}" } },
+            "url": "{{baseUrl}}/graphql"
+          }
+        },
+        {
+          "name": "Mutation - update post",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('no GraphQL errors', () => pm.expect(pm.response.json().errors).to.be.undefined);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "graphql", "graphql": { "query": "mutation ($id: ID!, $title: String!) {\n  updatePost(id: $id, title: $title, content: \"Updated with a GraphQL mutation from Postman.\", status: DRAFT) {\n    id\n    title\n    status\n  }\n}", "variables": "{\n  \"id\": \"{{gqlPostId}}\",\n  \"title\": \"GraphQL post {{run}} updated\"\n}" } },
+            "url": "{{baseUrl}}/graphql"
+          }
+        },
+        {
+          "name": "Mutation - create post with empty title (validation error)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK (GraphQL puts errors in the body)', () => pm.response.to.have.status(200));",
+            "pm.test('has a validation error', () => pm.expect(pm.response.json().errors).to.be.an('array').that.is.not.empty);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "graphql", "graphql": { "query": "mutation ($authorId: ID!) {\n  createPost(title: \"\", content: \"Content that is long enough for validation.\", authorId: $authorId) {\n    id\n  }\n}", "variables": "{\n  \"authorId\": \"{{userId}}\"\n}" } },
+            "url": "{{baseUrl}}/graphql"
+          }
+        },
+        {
+          "name": "Mutation - delete post",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('deleted', () => pm.expect(pm.response.json().data.deletePost).to.be.true);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "graphql", "graphql": { "query": "mutation ($id: ID!) {\n  deletePost(id: $id)\n}", "variables": "{\n  \"id\": \"{{gqlPostId}}\"\n}" } },
+            "url": "{{baseUrl}}/graphql"
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. Metrics (AOP)",
+      "item": [
+        {
+          "name": "Service method timings",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('has measurements', () => pm.expect(pm.response.json().data.length).to.be.above(0));"
+          ] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/metrics/methods" }
+        }
+      ]
+    },
+    {
+      "name": "12. Cleanup (deletes)",
+      "item": [
+        {
+          "name": "Delete review",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] } }],
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/reviews/{{reviewId}}" }
+        },
+        {
+          "name": "Delete comment",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] } }],
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/comments/{{commentId}}" }
+        },
+        {
+          "name": "Delete post",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] } }],
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/posts/{{postId}}" }
+        },
+        {
+          "name": "Get deleted post (404)",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('404 Not Found', () => pm.response.to.have.status(404));"] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/posts/{{postId}}" }
+        },
+        {
+          "name": "Delete tag",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] } }],
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/tags/{{tagId}}" }
+        },
+        {
+          "name": "Delete user",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] } }],
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/users/{{userId}}" }
+        },
+        {
+          "name": "Get deleted user (404)",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('404 Not Found', () => pm.response.to.have.status(404));"] } }],
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/users/{{userId}}" }
+        },
+        {
+          "name": "Reset metrics",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] } }],
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/metrics/methods" }
+        }
+      ]
+    }
+  ]
+}
