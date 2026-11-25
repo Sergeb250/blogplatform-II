@@ -1,0 +1,129 @@
+# =====================================================================
+# GraphQL schema of the Blogging Platform.
+# Endpoint: POST /graphql      Playground: /graphiql (dev and test profiles)
+#
+# "!" means "never null". [Post!]! is a list that is never null and has no null items.
+# Every query and mutation is answered by a controller in com.amali.blogPlatform.graphql,
+# which calls the SAME services as the REST controllers.
+# =====================================================================
+
+enum Role {
+    ADMIN
+    AUTHOR
+    READER
+}
+
+enum PostStatus {
+    DRAFT
+    PUBLISHED
+}
+
+type User {
+    id: ID!
+    username: String!
+    email: String!
+    role: Role!
+    createdAt: String
+    "The posts written by this user (newest first, at most 100)."
+    posts: [Post!]!
+}
+
+type Post {
+    id: ID!
+    title: String!
+    content: String!
+    status: PostStatus!
+    authorId: ID!
+    authorUsername: String!
+    "The full author, loaded for all posts of a response in ONE query (@BatchMapping)."
+    author: User
+    tags: [Tag!]!
+    comments: [Comment!]!
+    reviews: [Review!]!
+    commentCount: Int!
+    averageRating: Float
+    createdAt: String
+    updatedAt: String
+}
+
+type Comment {
+    id: ID!
+    postId: ID!
+    postTitle: String
+    userId: ID!
+    username: String!
+    content: String!
+    createdAt: String
+}
+
+type Tag {
+    id: ID!
+    name: String!
+}
+
+type Review {
+    id: ID!
+    postId: ID!
+    postTitle: String
+    userId: ID!
+    username: String!
+    rating: Int!
+    reviewText: String
+    createdAt: String
+}
+
+"One page of posts with paging information."
+type PostPage {
+    content: [Post!]!
+    page: Int!
+    size: Int!
+    totalElements: Int!
+    totalPages: Int!
+    first: Boolean!
+    last: Boolean!
+}
+
+type Query {
+    "Posts, newest first by default. Same paging, sorting and filtering as GET /api/posts."
+    posts(page: Int = 0, size: Int = 10, sortBy: String = "created_at", direction: String = "DESC",
+          authorId: ID, tag: String, status: PostStatus): [Post!]!
+    "Like posts, plus totalElements and totalPages."
+    postPage(page: Int = 0, size: Int = 10, sortBy: String = "created_at", direction: String = "DESC",
+             authorId: ID, tag: String, status: PostStatus): PostPage!
+    post(id: ID!): Post
+    searchPosts(keyword: String!, page: Int = 0, size: Int = 10): PostPage!
+
+    users: [User!]!
+    user(id: ID!): User
+
+    tags: [Tag!]!
+    tag(id: ID!): Tag
+
+    comments(postId: ID!): [Comment!]!
+    comment(id: ID!): Comment
+
+    reviews(postId: ID!): [Review!]!
+    review(id: ID!): Review
+}
+
+type Mutation {
+    createUser(username: String!, email: String!, password: String!, role: Role): User!
+    updateUser(id: ID!, username: String!, email: String!, password: String, role: Role): User!
+    deleteUser(id: ID!): Boolean!
+
+    createPost(title: String!, content: String!, authorId: ID!, status: PostStatus, tagIds: [ID!]): Post!
+    updatePost(id: ID!, title: String!, content: String!, status: PostStatus, tagIds: [ID!]): Post!
+    deletePost(id: ID!): Boolean!
+
+    addComment(postId: ID!, userId: ID!, content: String!): Comment!
+    updateComment(id: ID!, content: String!): Comment!
+    deleteComment(id: ID!): Boolean!
+
+    createTag(name: String!): Tag!
+    updateTag(id: ID!, name: String!): Tag!
+    deleteTag(id: ID!): Boolean!
+
+    createReview(postId: ID!, userId: ID!, rating: Int!, reviewText: String): Review!
+    updateReview(id: ID!, rating: Int!, reviewText: String): Review!
+    deleteReview(id: ID!): Boolean!
+}
